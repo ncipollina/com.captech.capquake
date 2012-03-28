@@ -1,7 +1,15 @@
 package com.captech.capquake;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.BufferedInputStream;
+import java.io.OutputStreamWriter;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.BitSet;
@@ -34,41 +42,44 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.net.Uri;
 import android.net.http.AndroidHttpClient;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import com.captech.capquake.Quake.Quakes;
 import com.captech.capquake.Quake.RssQuakes;
 
-
 public class QuakeProvider extends ContentProvider {
 	private static final String TAG = "QuakeProvider";
-	
-	//private DefaultHttpClient mHttpClient;
+
+	// private DefaultHttpClient mHttpClient;
 	private AndroidHttpClient mHttpClient;
-	
+
 	private static final int QUAKES = 1;
-	
+
 	private static HashMap<String, String> quakesProjectionMap;
-	
+
 	private static final UriMatcher sUriMatcher;
-	
+
 	private static final String DATABASE_NAME = "quakes.db";
-	
+
 	private static final String QUAKES_TABLE_NAME = "quakes";
-	
+
 	private static final int DATABASE_VERSION = 1;
-	
+
 	public static final String AUTHORITY = "com.captech.capquake.QuakeProvider";
-	
+
 	private static final String TIME_PATTERN = ".+<p>Date: ((Mon|Tue|Wed|Thu|Fri|Sat|Sun).+) UTC<br/>.+";
-	
+
 	private static final Pattern mPattern = Pattern.compile(TIME_PATTERN);
-	
+
 	private static Matcher matcher;
-	
-	private static final SimpleDateFormat sdf; 
-	
-	private static class DatabaseHelper extends SQLiteOpenHelper{
+
+	private static final SimpleDateFormat sdf;
+
+	private static final long TWENTY_FOUR_HOURS = 86400000;
+	private static final String LAST_UPDATED = "last_updated.txt";
+
+	private static class DatabaseHelper extends SQLiteOpenHelper {
 
 		public DatabaseHelper(Context context) {
 			super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -76,25 +87,26 @@ public class QuakeProvider extends ContentProvider {
 
 		@Override
 		public void onCreate(SQLiteDatabase db) {
-			db.execSQL("CREATE TABLE " + QUAKES_TABLE_NAME + " (" + Quakes.QUAKE_ID 
-					+ " INTEGER PRIMARY KEY AUTOINCREMENT," + Quakes.TITLE + " VARCHAR(255),"
-					+ Quakes.LATITUDE + " NUMERIC," + Quakes.LONGITUDE + " NUMERIC," 
-					+ Quakes.LINK + " VARCHAR(255)," + Quakes.MAGNITUDE + " INTEGER,"
-					+ Quakes.TIME + " INTEGER UNIQUE);");
+			db.execSQL("CREATE TABLE " + QUAKES_TABLE_NAME + " ("
+					+ Quakes.QUAKE_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+					+ Quakes.TITLE + " VARCHAR(255)," + Quakes.LATITUDE
+					+ " NUMERIC," + Quakes.LONGITUDE + " NUMERIC,"
+					+ Quakes.LINK + " VARCHAR(255)," + Quakes.MAGNITUDE
+					+ " INTEGER," + Quakes.TIME + " INTEGER UNIQUE);");
 		}
 
 		@Override
 		public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-			Log.w(TAG,"Upgrading database from version " + oldVersion + " to " + newVersion
-					+ ", which will destroy all data");
+			Log.w(TAG, "Upgrading database from version " + oldVersion + " to "
+					+ newVersion + ", which will destroy all data");
 			db.execSQL("DROP TABLE IF EXISTS " + QUAKES_TABLE_NAME);
 			onCreate(db);
 		}
-		
+
 	}
-	
+
 	private DatabaseHelper dbHelper;
-	
+
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
 		throw new UnsupportedOperationException();
@@ -102,13 +114,12 @@ public class QuakeProvider extends ContentProvider {
 
 	@Override
 	public String getType(Uri uri) {
-		switch(sUriMatcher.match(uri))
-		{
-			case QUAKES:
-				return Quakes.CONTENT_TYPE;
-			
-			default:
-				throw new IllegalArgumentException("Unkown URI " + uri);
+		switch (sUriMatcher.match(uri)) {
+		case QUAKES:
+			return Quakes.CONTENT_TYPE;
+
+		default:
+			throw new IllegalArgumentException("Unkown URI " + uri);
 		}
 	}
 
@@ -127,68 +138,117 @@ public class QuakeProvider extends ContentProvider {
 	public Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
 		SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
-		
-		switch(sUriMatcher.match(uri)){
-			case QUAKES:
-				qb.setTables(QUAKES_TABLE_NAME);
-				qb.setProjectionMap(quakesProjectionMap);
-				break;
-			default:
-				throw new IllegalArgumentException("Unkown URI " + uri);
+
+		switch (sUriMatcher.match(uri)) {
+		case QUAKES:
+			qb.setTables(QUAKES_TABLE_NAME);
+			qb.setProjectionMap(quakesProjectionMap);
+			break;
+		default:
+			throw new IllegalArgumentException("Unkown URI " + uri);
 		}
 		final String url = uri.getQueryParameter("url");
-		final Boolean reset = Boolean.parseBoolean(uri.getQueryParameter("reset"));
-		
+		final Boolean reset = Boolean.parseBoolean(uri
+				.getQueryParameter("reset"));
+		final long lastUpdated = getLastUpdatedDate();
+
 		SQLiteDatabase db = dbHelper.getWritableDatabase();
-		if (reset && url != null){
+		if (url != null
+				&& (reset || new Date().getTime() - lastUpdated >= TWENTY_FOUR_HOURS)) {
 			XmlPullParser parser = null;
 			mHttpClient = null;
 			parser = getUriXmlPullParser(url);
-	        if (parser != null) {
-	            XMLCursor xmlCursor = new XMLCursor(selection, projection);
-	            try {
-	                xmlCursor.parseWith(parser);
-	                xmlCursor.moveToFirst();
-	                while (xmlCursor.isAfterLast() == false){
-	                	String quakeTime = xmlCursor.getString(6);
-	                	matcher = mPattern.matcher(quakeTime);
-	                	boolean matchFound = matcher.find();
-	                	Date quakeDate;
-	                	if (matchFound){
-	                		quakeTime = matcher.group(1);
-	                		try {
+			if (parser != null) {
+				XMLCursor xmlCursor = new XMLCursor(selection, projection);
+				try {
+					xmlCursor.parseWith(parser);
+					xmlCursor.moveToFirst();
+					while (xmlCursor.isAfterLast() == false) {
+						String quakeTime = xmlCursor.getString(6);
+						matcher = mPattern.matcher(quakeTime);
+						boolean matchFound = matcher.find();
+						Date quakeDate;
+						if (matchFound) {
+							quakeTime = matcher.group(1);
+							try {
 								quakeDate = sdf.parse(quakeTime);
 							} catch (ParseException e) {
 								Log.w(TAG, "Error parsing date", e);
 								quakeDate = new Date();
 							}
-	                	}
-	                	else
-	                		quakeDate = new Date();
-	                	ContentValues initialValues = new ContentValues();
-	                	initialValues.put(Quakes.TITLE, xmlCursor.getString(1));
-	                	initialValues.put(Quakes.LATITUDE, xmlCursor.getFloat(2));
-	                	initialValues.put(Quakes.LONGITUDE, xmlCursor.getFloat(3));
-	                	initialValues.put(Quakes.LINK, xmlCursor.getString(4));
-	                	initialValues.put(Quakes.MAGNITUDE, xmlCursor.getString(5));
-	                	initialValues.put(Quakes.TIME, quakeDate.getTime());
-						db.replace(QUAKES_TABLE_NAME, Quakes.TITLE, initialValues);
+						} else
+							quakeDate = new Date();
+						ContentValues initialValues = new ContentValues();
+						initialValues.put(Quakes.TITLE, xmlCursor.getString(1));
+						initialValues.put(Quakes.LATITUDE,
+								xmlCursor.getFloat(2));
+						initialValues.put(Quakes.LONGITUDE,
+								xmlCursor.getFloat(3));
+						initialValues.put(Quakes.LINK, xmlCursor.getString(4));
+						initialValues.put(Quakes.MAGNITUDE,
+								xmlCursor.getString(5));
+						initialValues.put(Quakes.TIME, quakeDate.getTime());
+						db.replace(QUAKES_TABLE_NAME, Quakes.TITLE,
+								initialValues);
 						xmlCursor.moveToNext();
-	                }
-	                xmlCursor.close();
-	            } catch (IOException e) {
-	                Log.w(TAG, "I/O error while parsing XML " + uri, e);
-	            } catch (XmlPullParserException e) {
-	                Log.w(TAG, "Error while parsing XML " + uri, e);
-	            } finally {
-	                if (mHttpClient != null) {
-	                    mHttpClient.close();
-	                }
-	            }
-	        }
+					}
+					writeLastUpdatedDate(new Date().getTime());
+					xmlCursor.close();
+				} catch (IOException e) {
+					Log.w(TAG, "I/O error while parsing XML " + uri, e);
+				} catch (XmlPullParserException e) {
+					Log.w(TAG, "Error while parsing XML " + uri, e);
+				} finally {
+					if (mHttpClient != null) {
+						mHttpClient.close();
+					}
+				}
+			}
 		}
-		Cursor c = qb.query(db, projection, null, selectionArgs, null, null, sortOrder);
+		Cursor c = qb.query(db, projection, null, selectionArgs, null, null,
+				sortOrder);
 		return c;
+	}
+
+	private void writeLastUpdatedDate(Long time) {
+		OutputStreamWriter out;
+		try {
+			out = new OutputStreamWriter(getContext().openFileOutput(
+					LAST_UPDATED, 0));
+			out.write(time.toString());
+			out.close();
+		} catch (FileNotFoundException e) {
+			Log.w(TAG, "I/O error while creating file " + LAST_UPDATED, e);
+
+		} catch (IOException e) {
+			Log.w(TAG, "I/O error while writing file " + LAST_UPDATED, e);
+		}
+	}
+
+	@Override
+	public ParcelFileDescriptor openFile(Uri uri, String mode)
+			throws FileNotFoundException {
+		// TODO Auto-generated method stub
+		return super.openFile(uri, mode);
+	}
+
+	private long getLastUpdatedDate() {
+		try {
+			InputStream in = getContext().openFileInput(LAST_UPDATED);
+			if (in != null) {
+				BufferedReader reader = new BufferedReader(
+						new InputStreamReader(in));
+				String date = reader.readLine();
+				in.close();
+				return Long.parseLong(date);
+			}
+		} catch (FileNotFoundException e) {
+			writeLastUpdatedDate((long) 0);
+			return getLastUpdatedDate();
+		} catch (IOException e) {
+			Log.w(TAG, "I/O error while reading file " + LAST_UPDATED, e);
+		}
+		return 0;
 	}
 
 	@Override
@@ -196,202 +256,230 @@ public class QuakeProvider extends ContentProvider {
 			String[] selectionArgs) {
 		throw new UnsupportedOperationException();
 	}
-	
-	static{
+
+	static {
 		sUriMatcher = new UriMatcher(UriMatcher.NO_MATCH);
 		sUriMatcher.addURI(AUTHORITY, QUAKES_TABLE_NAME, QUAKES);
-		
+
 		quakesProjectionMap = new HashMap<String, String>();
 		quakesProjectionMap.put(Quakes.QUAKE_ID, Quakes.QUAKE_ID);
-		quakesProjectionMap.put(RssQuakes.TITLE, Quakes.TITLE + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.TITLE));
-		quakesProjectionMap.put(RssQuakes.LATITUDE, Quakes.LATITUDE + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.LATITUDE));
-		quakesProjectionMap.put(RssQuakes.LONGITUDE, Quakes.LONGITUDE + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.LONGITUDE));
-		quakesProjectionMap.put(RssQuakes.LINK, Quakes.LINK + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.LINK));
-		quakesProjectionMap.put(RssQuakes.MAGNITUDE, Quakes.MAGNITUDE + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.MAGNITUDE));
-		quakesProjectionMap.put(RssQuakes.TIME, Quakes.TIME + " AS " + DatabaseUtils.sqlEscapeString(RssQuakes.TIME));
-		
+		quakesProjectionMap.put(RssQuakes.TITLE, Quakes.TITLE + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.TITLE));
+		quakesProjectionMap.put(RssQuakes.LATITUDE, Quakes.LATITUDE + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.LATITUDE));
+		quakesProjectionMap.put(RssQuakes.LONGITUDE, Quakes.LONGITUDE + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.LONGITUDE));
+		quakesProjectionMap.put(RssQuakes.LINK, Quakes.LINK + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.LINK));
+		quakesProjectionMap.put(RssQuakes.MAGNITUDE, Quakes.MAGNITUDE + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.MAGNITUDE));
+		quakesProjectionMap.put(RssQuakes.TIME, Quakes.TIME + " AS "
+				+ DatabaseUtils.sqlEscapeString(RssQuakes.TIME));
+
 		sdf = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss");
 		sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
 	}
 
-    protected XmlPullParser getUriXmlPullParser(String url) {
-        XmlPullParser parser = null;
-        try {
-            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-            factory.setNamespaceAware(true);
-            parser = factory.newPullParser();
-        } catch (XmlPullParserException e) {
-            Log.e(TAG, "Unable to create XmlPullParser", e);
-            return null;
-        }
+	protected XmlPullParser getUriXmlPullParser(String url) {
+		XmlPullParser parser = null;
+		try {
+			XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
+			factory.setNamespaceAware(true);
+			parser = factory.newPullParser();
+		} catch (XmlPullParserException e) {
+			Log.e(TAG, "Unable to create XmlPullParser", e);
+			return null;
+		}
 
-        InputStream inputStream = null;
-        try {
-            final HttpGet get = new HttpGet(url);
-            //mHttpClient = new DefaultHttpClient();
-            mHttpClient = AndroidHttpClient.newInstance("Android");
-            HttpResponse response = mHttpClient.execute(get);
-            if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
-                final HttpEntity entity = response.getEntity();
-                if (entity != null) {
-                    inputStream = entity.getContent();
-                }
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Error while retrieving XML file " + url, e);
-            return null;
-        }
+		InputStream inputStream = null;
+		try {
+			final HttpGet get = new HttpGet(url);
+			// mHttpClient = new DefaultHttpClient();
+			mHttpClient = AndroidHttpClient.newInstance("Android");
+			HttpResponse response = mHttpClient.execute(get);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				final HttpEntity entity = response.getEntity();
+				if (entity != null) {
+					inputStream = entity.getContent();
+				}
+			}
+		} catch (IOException e) {
+			Log.w(TAG, "Error while retrieving XML file " + url, e);
+			return null;
+		}
 
-        try {
-            parser.setInput(inputStream, null);
-        } catch (XmlPullParserException e) {
-            Log.w(TAG, "Error while reading XML file from " + url, e);
-            return null;
-        }
+		try {
+			parser.setInput(inputStream, null);
+		} catch (XmlPullParserException e) {
+			Log.w(TAG, "Error while reading XML file from " + url, e);
+			return null;
+		}
 
-        return parser;
-    }
-    private static class XMLCursor extends MatrixCursor {
-        private final Pattern mSelectionPattern;
-        private Pattern[] mProjectionPatterns;
-        private String[] mAttributeNames;
-        private String[] mCurrentValues;
-        private BitSet[] mActiveTextDepthMask;
-        private final int mNumberOfProjections;
+		return parser;
+	}
 
-        public XMLCursor(String selection, String[] projections) {
-            super(projections);
-            // The first column in projections is used for the _ID
-            mNumberOfProjections = projections.length - 1;
-            mSelectionPattern = createPattern(selection);
-            createProjectionPattern(projections);
-        }
+	private static class XMLCursor extends MatrixCursor {
+		private final Pattern mSelectionPattern;
+		private Pattern[] mProjectionPatterns;
+		private String[] mAttributeNames;
+		private String[] mCurrentValues;
+		private BitSet[] mActiveTextDepthMask;
+		private final int mNumberOfProjections;
 
-        private Pattern createPattern(String input) {
-            String pattern = input.replaceAll("//", "/(.*/|)").replaceAll("^/", "^/") + "$";
-            return Pattern.compile(pattern);
-        }
+		public XMLCursor(String selection, String[] projections) {
+			super(projections);
+			// The first column in projections is used for the _ID
+			mNumberOfProjections = projections.length - 1;
+			mSelectionPattern = createPattern(selection);
+			createProjectionPattern(projections);
+		}
 
-        private void createProjectionPattern(String[] projections) {
-            mProjectionPatterns = new Pattern[mNumberOfProjections];
-            mAttributeNames = new String[mNumberOfProjections];
-            mActiveTextDepthMask = new BitSet[mNumberOfProjections];
-            // Add a column to store _ID
-            mCurrentValues = new String[mNumberOfProjections + 1];
+		private Pattern createPattern(String input) {
+			String pattern = input.replaceAll("//", "/(.*/|)").replaceAll("^/",
+					"^/")
+					+ "$";
+			return Pattern.compile(pattern);
+		}
 
-            for (int i=0; i<mNumberOfProjections; i++) {
-                mActiveTextDepthMask[i] = new BitSet();
-                String projection = projections[i + 1]; // +1 to skip the _ID column
-                int atIndex = projection.lastIndexOf('@', projection.length());
-                if (atIndex >= 0) {
-                    mAttributeNames[i] = projection.substring(atIndex+1);
-                    projection = projection.substring(0, atIndex);
-                } else {
-                    mAttributeNames[i] = null;
-                }
+		private void createProjectionPattern(String[] projections) {
+			mProjectionPatterns = new Pattern[mNumberOfProjections];
+			mAttributeNames = new String[mNumberOfProjections];
+			mActiveTextDepthMask = new BitSet[mNumberOfProjections];
+			// Add a column to store _ID
+			mCurrentValues = new String[mNumberOfProjections + 1];
 
-                // Conforms to XPath standard: reference to local context starts with a .
-                if (projection.charAt(0) == '.') {
-                    projection = projection.substring(1);
-                }
-                mProjectionPatterns[i] = createPattern(projection);
-            }
-        }
+			for (int i = 0; i < mNumberOfProjections; i++) {
+				mActiveTextDepthMask[i] = new BitSet();
+				String projection = projections[i + 1]; // +1 to skip the _ID
+														// column
+				int atIndex = projection.lastIndexOf('@', projection.length());
+				if (atIndex >= 0) {
+					mAttributeNames[i] = projection.substring(atIndex + 1);
+					projection = projection.substring(0, atIndex);
+				} else {
+					mAttributeNames[i] = null;
+				}
 
-        public void parseWith(XmlPullParser parser) throws IOException, XmlPullParserException {
-            StringBuilder path = new StringBuilder();
-            Stack<Integer> pathLengthStack = new Stack<Integer>();
+				// Conforms to XPath standard: reference to local context starts
+				// with a .
+				if (projection.charAt(0) == '.') {
+					projection = projection.substring(1);
+				}
+				mProjectionPatterns[i] = createPattern(projection);
+			}
+		}
 
-            // There are two parsing mode: in root mode, rootPath is updated and nodes matching
-            // selectionPattern are searched for and currentNodeDepth is negative.
-            // When a node matching selectionPattern is found, currentNodeDepth is set to 0 and
-            // updated as children are parsed and projectionPatterns are searched in nodePath.
-            int currentNodeDepth = -1;
+		public void parseWith(XmlPullParser parser) throws IOException,
+				XmlPullParserException {
+			StringBuilder path = new StringBuilder();
+			Stack<Integer> pathLengthStack = new Stack<Integer>();
 
-            // Index where local selected node path starts from in path
-            int currentNodePathStartIndex = 0;
+			// There are two parsing mode: in root mode, rootPath is updated and
+			// nodes matching
+			// selectionPattern are searched for and currentNodeDepth is
+			// negative.
+			// When a node matching selectionPattern is found, currentNodeDepth
+			// is set to 0 and
+			// updated as children are parsed and projectionPatterns are
+			// searched in nodePath.
+			int currentNodeDepth = -1;
 
-            int eventType = parser.getEventType();
-            while (eventType != XmlPullParser.END_DOCUMENT) {
+			// Index where local selected node path starts from in path
+			int currentNodePathStartIndex = 0;
 
-                if (eventType == XmlPullParser.START_TAG) {
-                    // Update path
-                    pathLengthStack.push(path.length());
-                    path.append('/');
-                    String prefix = null;
-                    try {
-                        // getPrefix is not supported by local Xml resource parser
-                        prefix = parser.getPrefix();
-                    } catch (RuntimeException e) {
-                        prefix = null;
-                    }
-                    if (prefix != null) {
-                        path.append(prefix);
-                        path.append(':');
-                    }
-                    path.append(parser.getName());
+			int eventType = parser.getEventType();
+			while (eventType != XmlPullParser.END_DOCUMENT) {
 
-                    if (currentNodeDepth >= 0) {
-                        currentNodeDepth++;
-                    } else {
-                        // A node matching selection is found: initialize child parsing mode
-                        if (mSelectionPattern.matcher(path.toString()).matches()) {
-                            currentNodeDepth = 0;
-                            currentNodePathStartIndex = path.length();
-                            mCurrentValues[0] = Integer.toString(getCount()); // _ID
-                            for (int i = 0; i < mNumberOfProjections; i++) {
-                                // Reset values to default (empty string)
-                                mCurrentValues[i + 1] = "";
-                                mActiveTextDepthMask[i].clear();
-                            }
-                        }
-                    }
+				if (eventType == XmlPullParser.START_TAG) {
+					// Update path
+					pathLengthStack.push(path.length());
+					path.append('/');
+					String prefix = null;
+					try {
+						// getPrefix is not supported by local Xml resource
+						// parser
+						prefix = parser.getPrefix();
+					} catch (RuntimeException e) {
+						prefix = null;
+					}
+					if (prefix != null) {
+						path.append(prefix);
+						path.append(':');
+					}
+					path.append(parser.getName());
 
-                    // This test has to be separated from the previous one as currentNodeDepth can
-                    // be modified above (when a node matching selection is found).
-                    if (currentNodeDepth >= 0) {
-                        final String localNodePath = path.substring(currentNodePathStartIndex);
-                        for (int i = 0; i < mNumberOfProjections; i++) {
-                            if (mProjectionPatterns[i].matcher(localNodePath).matches()) {
-                                String attribute = mAttributeNames[i];
-                                if (attribute != null) {
-                                    mCurrentValues[i + 1] =
-                                        parser.getAttributeValue(null, attribute);
-                                } else {
-                                    mActiveTextDepthMask[i].set(currentNodeDepth, true);
-                                }
-                            }
-                        }
-                    }
+					if (currentNodeDepth >= 0) {
+						currentNodeDepth++;
+					} else {
+						// A node matching selection is found: initialize child
+						// parsing mode
+						if (mSelectionPattern.matcher(path.toString())
+								.matches()) {
+							currentNodeDepth = 0;
+							currentNodePathStartIndex = path.length();
+							mCurrentValues[0] = Integer.toString(getCount()); // _ID
+							for (int i = 0; i < mNumberOfProjections; i++) {
+								// Reset values to default (empty string)
+								mCurrentValues[i + 1] = "";
+								mActiveTextDepthMask[i].clear();
+							}
+						}
+					}
 
-                } else if (eventType == XmlPullParser.END_TAG) {
-                    // Pop last node from path
-                    final int length = pathLengthStack.pop();
-                    path.setLength(length);
+					// This test has to be separated from the previous one as
+					// currentNodeDepth can
+					// be modified above (when a node matching selection is
+					// found).
+					if (currentNodeDepth >= 0) {
+						final String localNodePath = path
+								.substring(currentNodePathStartIndex);
+						for (int i = 0; i < mNumberOfProjections; i++) {
+							if (mProjectionPatterns[i].matcher(localNodePath)
+									.matches()) {
+								String attribute = mAttributeNames[i];
+								if (attribute != null) {
+									mCurrentValues[i + 1] = parser
+											.getAttributeValue(null, attribute);
+								} else {
+									mActiveTextDepthMask[i].set(
+											currentNodeDepth, true);
+								}
+							}
+						}
+					}
 
-                    if (currentNodeDepth >= 0) {
-                        if (currentNodeDepth == 0) {
-                            // Leaving a selection matching node: add a new row with results
-                            addRow(mCurrentValues);
-                        } else {
-                            for (int i = 0; i < mNumberOfProjections; i++) {
-                                mActiveTextDepthMask[i].set(currentNodeDepth, false);
-                            }
-                        }
-                        currentNodeDepth--;
-                    }
+				} else if (eventType == XmlPullParser.END_TAG) {
+					// Pop last node from path
+					final int length = pathLengthStack.pop();
+					path.setLength(length);
 
-                } else if ((eventType == XmlPullParser.TEXT) && (!parser.isWhitespace())) {
-                    for (int i = 0; i < mNumberOfProjections; i++) {
-                        if ((currentNodeDepth >= 0) &&
-                            (mActiveTextDepthMask[i].get(currentNodeDepth))) {
-                            mCurrentValues[i + 1] += parser.getText();
-                        }
-                    }
-                }
+					if (currentNodeDepth >= 0) {
+						if (currentNodeDepth == 0) {
+							// Leaving a selection matching node: add a new row
+							// with results
+							addRow(mCurrentValues);
+						} else {
+							for (int i = 0; i < mNumberOfProjections; i++) {
+								mActiveTextDepthMask[i].set(currentNodeDepth,
+										false);
+							}
+						}
+						currentNodeDepth--;
+					}
 
-                eventType = parser.next();
-            }
-        }
-    }
+				} else if ((eventType == XmlPullParser.TEXT)
+						&& (!parser.isWhitespace())) {
+					for (int i = 0; i < mNumberOfProjections; i++) {
+						if ((currentNodeDepth >= 0)
+								&& (mActiveTextDepthMask[i]
+										.get(currentNodeDepth))) {
+							mCurrentValues[i + 1] += parser.getText();
+						}
+					}
+				}
+
+				eventType = parser.next();
+			}
+		}
+	}
 }

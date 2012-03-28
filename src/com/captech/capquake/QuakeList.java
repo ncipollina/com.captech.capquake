@@ -10,12 +10,12 @@ import com.captech.capquake.Quake.Quakes;
 
 public class QuakeList extends ListActivity {
 	private static final String FEED_URI = "http://earthquake.usgs.gov/earthquakes/shakemap/rss.xml";
+	private CursorAdapter adapter;
 	
-  	@Override
-	protected void onStop() {
-		super.onStop();
-		
-		CursorAdapter adapter = (CursorAdapter)this.getListAdapter();
+	@Override
+	protected void onDestroy() {
+		super.onDestroy();
+
 		if (adapter != null)
 		{
 			adapter.getCursor().close();
@@ -23,13 +23,25 @@ public class QuakeList extends ListActivity {
 		}
 	}
 
+	@Override
+	protected void onPause() {
+		// TODO Auto-generated method stub
+		super.onPause();
+	}
+
+	@Override
+	protected void onResume() {
+		super.onResume();
+	}
+
 	/** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.quake_list);
-        setListAdapter(Adapters.loadCursorAdapter(this, R.xml.quake, Quakes.CONTENT_URI + "?url="
-        		+ Uri.encode(FEED_URI) + "&reset=" + (savedInstanceState == null)));
+        adapter = Adapters.loadCursorAdapter(this, R.xml.quake, Quakes.CONTENT_URI + "?url="
+        		+ Uri.encode(FEED_URI) + "&reset=false");
+        setListAdapter(adapter);
         
         getListView().setOnItemClickListener(new UrlIntentListener());
     }
