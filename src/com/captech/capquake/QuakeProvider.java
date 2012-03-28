@@ -43,8 +43,8 @@ import com.captech.capquake.Quake.RssQuakes;
 public class QuakeProvider extends ContentProvider {
 	private static final String TAG = "QuakeProvider";
 	
-	private DefaultHttpClient mHttpClient;
-	//private AndroidHttpClient mHttpClient; TODO convert back when in seperate thread.
+	//private DefaultHttpClient mHttpClient;
+	private AndroidHttpClient mHttpClient;
 	
 	private static final int QUAKES = 1;
 	
@@ -142,8 +142,8 @@ public class QuakeProvider extends ContentProvider {
 		SQLiteDatabase db = dbHelper.getWritableDatabase();
 		if (reset && url != null){
 			XmlPullParser parser = null;
-			parser = getUriXmlPullParser(url);
 			mHttpClient = null;
+			parser = getUriXmlPullParser(url);
 	        if (parser != null) {
 	            XMLCursor xmlCursor = new XMLCursor(selection, projection);
 	            try {
@@ -182,7 +182,7 @@ public class QuakeProvider extends ContentProvider {
 	                Log.w(TAG, "Error while parsing XML " + uri, e);
 	            } finally {
 	                if (mHttpClient != null) {
-	                    //mHttpClient.close(); TODO change back when in seperate thread;
+	                    mHttpClient.close();
 	                }
 	            }
 	        }
@@ -229,8 +229,8 @@ public class QuakeProvider extends ContentProvider {
         InputStream inputStream = null;
         try {
             final HttpGet get = new HttpGet(url);
-            mHttpClient = new DefaultHttpClient();
-            //mHttpClient = AndroidHttpClient.newInstance("Android"); TODO change back when in seperate thread.
+            //mHttpClient = new DefaultHttpClient();
+            mHttpClient = AndroidHttpClient.newInstance("Android");
             HttpResponse response = mHttpClient.execute(get);
             if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
                 final HttpEntity entity = response.getEntity();

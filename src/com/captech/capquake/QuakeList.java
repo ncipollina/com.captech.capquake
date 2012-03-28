@@ -1,13 +1,10 @@
 package com.captech.capquake;
 
-import com.captech.capquake.Quake.Quakes;
-import com.captech.capquake.Quake.RssQuakes;
-
-import android.app.Activity;
 import android.app.ListActivity;
 import android.net.Uri;
 import android.os.Bundle;
-import android.widget.CursorAdapter;
+
+import com.captech.capquake.Quake.Quakes;
 
 public class QuakeList extends ListActivity {
 	private static final String FEED_URI = "http://earthquake.usgs.gov/earthquakes/shakemap/rss.xml";
@@ -19,5 +16,7 @@ public class QuakeList extends ListActivity {
         setContentView(R.layout.quake_list);
         setListAdapter(Adapters.loadCursorAdapter(this, R.xml.quake, Quakes.CONTENT_URI + "?url="
         		+ Uri.encode(FEED_URI) + "&reset=" + (savedInstanceState == null)));
+        
+        getListView().setOnItemClickListener(new UrlIntentListener());
     }
 }

@@ -26,18 +26,10 @@
         app:to="@id/title" />
     <bind
         app:as="string"
-        app:from="/description"
-        app:to="@id/quake_date" />
-    <bind
-        app:as="string"
         app:from="/geo:lat"
         app:to="@id/latitude">
         <transform app:withExpression="Latitude: {/geo:lat}" />
     </bind>
-    <bind
-        app:as="tag"
-        app:from="/guid"
-        app:to="@id/item_layout" />
     <bind
         app:as="string"
         app:from="/geo:long"
@@ -45,8 +37,16 @@
         <transform app:withExpression="Longitude: {/geo:long}" />
     </bind>
     <bind
+        app:as="tag"
+        app:from="/link"
+        app:to="@id/item_layout" />
+    <bind
         app:as="string"
         app:from="/dc:subject"
         app:to="@id/magnitude"/>
+    <bind
+        app:as="string"
+        app:from="/description"
+        app:to="@id/quake_date" />
 
 </cursor-adapter>
