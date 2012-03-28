@@ -82,5 +82,16 @@
         -->
         <attr name="withClass" format="string" />
     </declare-styleable>
+    
+    <!--  Attributes used to map values to new values in XML cursor adapters' bind items. -->
+    <declare-styleable name="CursorAdapter_ColorItem">
+        
+        <!-- The value that the value from the column must be greater than or equal to to apply the format -->
+        <attr name="greaterThanOrEqualTo" format="string"/>
+        
+        <!-- The color to apply to the view's background -->
+        <attr name="color" format="string"/>
+        
+    </declare-styleable>
 
 </resources>
