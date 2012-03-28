@@ -32,7 +32,7 @@
         app:as="string"
         app:from="/geo:lat"
         app:to="@id/latitude">
-        <transofrm app:withExpression="Latitude: {/geo:lat}" />
+        <transform app:withExpression="Latitude: {/geo:lat}" />
     </bind>
     <bind
         app:as="tag"

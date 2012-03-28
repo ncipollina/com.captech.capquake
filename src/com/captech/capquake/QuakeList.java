@@ -17,7 +17,7 @@ public class QuakeList extends ListActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.quake_list);
-        setListAdapter(Adapters.loadCursorAdapter(this, 0, Quakes.CONTENT_URI + "?url="
+        setListAdapter(Adapters.loadCursorAdapter(this, R.xml.quake, Quakes.CONTENT_URI + "?url="
         		+ Uri.encode(FEED_URI) + "&reset=" + (savedInstanceState == null)));
     }
 }
