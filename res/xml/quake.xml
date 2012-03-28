@@ -41,12 +41,17 @@
         app:from="/link"
         app:to="@id/item_layout" />
     <bind
-        app:as="string"
+        app:as="color"
         app:from="/dc:subject"
-        app:to="@id/magnitude"/>
+        app:to="@id/item_layout">
+        <colorSet app:greaterThanOrEqualTo="5" app:color="#B6240D"/>
+        <colorSet app:greaterThanOrEqualTo="7" app:color="#FF0000" />
+    </bind>
     <bind
         app:as="string"
         app:from="/description"
-        app:to="@id/quake_date" />
+        app:to="@id/quake_date">
+        <transform app:withClass="com.captech.capquake.DateTransformation"/>
+    </bind>
 
 </cursor-adapter>

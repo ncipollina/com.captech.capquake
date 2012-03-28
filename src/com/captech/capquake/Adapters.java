@@ -22,6 +22,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.Xml;
 import android.view.View;
 import android.widget.BaseAdapter;
@@ -808,13 +809,17 @@ public class Adapters {
 			if (transformed == null) {
 				mColorMappings.put(value, value);
 				Entry<String, String> entry = mColorMappings.lowerEntry(value);
+				mColorMappings.remove(value); // We have to remove the value
+												// because we just put it in
+												// temporarily to find
+				// the value that we were greater than
 				if (entry != null) {
 					transformed = entry.getValue();
 					return transformed;
 				}
 			} else
 				return transformed;
-			return null;
+			return "#000000";
 		}
 	}
 
@@ -911,8 +916,14 @@ public class Adapters {
 		@Override
 		public boolean bind(View view, Cursor cursor, int columnIndex) {
 			final String color = mTransformation.transform(cursor, columnIndex);
-			if (color != null)
-				view.setBackgroundColor(Color.parseColor(color));
+			if (color != null) {
+				try {
+					view.setBackgroundColor(Color.parseColor(color));
+				} catch (IllegalArgumentException e) {
+					Log.w("Adapters","Could not parse color: " + color,e);
+				}
+			}
+
 			return true;
 		}
 	}

@@ -48,12 +48,6 @@
             android:paddingLeft="6dip"
             android:paddingRight="6dip"
             android:textAppearance="?android:attr/textAppearanceSmall" />
-        <TextView 
-            android:id="@+id/magnitude"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            android:gravity="right"
-            android:paddingRight="6dip"/>"
     </LinearLayout>
 
 </LinearLayout>
