@@ -188,7 +188,6 @@ public class QuakeProvider extends ContentProvider {
 	        }
 		}
 		Cursor c = qb.query(db, projection, null, selectionArgs, null, null, sortOrder);
-		db.close();
 		return c;
 	}
 
