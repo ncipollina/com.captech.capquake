@@ -11,6 +11,8 @@ import java.util.TreeMap;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
+import com.captech.capquake.Quake.Quakes;
+
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Resources;
@@ -536,8 +538,9 @@ public class Adapters {
 		}
 	}
 
-	private static interface IManagedAdapter {
+	public static interface IManagedAdapter {
 		void load();
+		void remove(int rowPosition);
 	}
 
 	private static class XmlCursorAdapter extends SimpleCursorAdapter implements
@@ -637,6 +640,14 @@ public class Adapters {
 					XmlCursorAdapter.super.changeCursor(cursor);
 				}
 			}
+		}
+
+		@Override
+		public void remove(int rowPosition) {
+			Cursor c = getCursor();
+			c.moveToPosition(rowPosition);
+			long id = c.getLong(c.getColumnIndex(Quakes.QUAKE_ID));
+			mContext.getContentResolver().delete(Uri.parse(mUri), Quakes.QUAKE_ID + "=?", new String[] {String.valueOf(id)});
 		}
 	}
 

@@ -4,5 +4,7 @@
     <string name="hello">Hello World, QuakeList!</string>
     <string name="app_name">CapQuake</string>
     <string name="no_quake_data">Loading Earthquake Data...</string>
+    <string name="delete">Delete</string>
+    <string name="refresh">Refresh</string>
 
 </resources>

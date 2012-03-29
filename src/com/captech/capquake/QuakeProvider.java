@@ -108,8 +108,17 @@ public class QuakeProvider extends ContentProvider {
 	private DatabaseHelper dbHelper;
 
 	@Override
-	public int delete(Uri uri, String selection, String[] selectionArgs) {
-		throw new UnsupportedOperationException();
+	public int delete(Uri uri, String where, String[] whereArgs) {
+		SQLiteDatabase db = dbHelper.getWritableDatabase();
+		int count;
+		switch (sUriMatcher.match(uri)) {
+		case QUAKES:
+			count = db.delete(QUAKES_TABLE_NAME, where, whereArgs);
+			break;
+		default:
+			throw new IllegalArgumentException("Unkown URI " + uri);
+		}
+		return count;
 	}
 
 	@Override
@@ -205,8 +214,9 @@ public class QuakeProvider extends ContentProvider {
 				}
 			}
 		}
+
 		Cursor c = qb.query(db, projection, null, selectionArgs, null, null,
-				sortOrder);
+				Quakes.TIME + " DESC");
 		return c;
 	}
 
@@ -225,13 +235,7 @@ public class QuakeProvider extends ContentProvider {
 		}
 	}
 
-	@Override
-	public ParcelFileDescriptor openFile(Uri uri, String mode)
-			throws FileNotFoundException {
-		// TODO Auto-generated method stub
-		return super.openFile(uri, mode);
-	}
-
+	
 	private long getLastUpdatedDate() {
 		try {
 			InputStream in = getContext().openFileInput(LAST_UPDATED);
