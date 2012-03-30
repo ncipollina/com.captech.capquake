@@ -30,6 +30,7 @@ import android.view.View;
 import android.widget.BaseAdapter;
 import android.widget.CursorAdapter;
 import android.widget.ImageView;
+import android.widget.ListView;
 import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 
@@ -603,6 +604,7 @@ public class Adapters {
 		}
 
 		public void load() {
+			toggleEmptyView(R.id.loading);
 			if (mUri != null) {
 				mLoadTask = new QueryTask().execute();
 			}
@@ -637,6 +639,10 @@ public class Adapters {
 			@Override
 			protected void onPostExecute(Cursor cursor) {
 				if (!isCancelled()) {
+					if (cursor.getCount() < 1)
+					{
+						toggleEmptyView(R.id.no_quakes);
+					}
 					XmlCursorAdapter.super.changeCursor(cursor);
 				}
 			}
@@ -648,6 +654,15 @@ public class Adapters {
 			c.moveToPosition(rowPosition);
 			long id = c.getLong(c.getColumnIndex(Quakes.QUAKE_ID));
 			mContext.getContentResolver().delete(Uri.parse(mUri), Quakes.QUAKE_ID + "=?", new String[] {String.valueOf(id)});
+		}
+		
+		private void toggleEmptyView(int newViewId){
+			ListView list = (ListView)((Activity)mContext).findViewById(android.R.id.list);
+			View eView = list.getEmptyView();
+			if (eView != null)
+				eView.setVisibility(View.GONE);
+			View newEView = ((Activity)mContext).findViewById(newViewId);
+			list.setEmptyView(newEView);
 		}
 	}
 
